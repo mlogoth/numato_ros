@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<launch>
+    <rosparam command="load" file="$(find numato_ros)/config/io.yaml" />
+    <node pkg="numato_ros" name="numato_ros" type="numato_ros" output="screen">
+        <param name="port" value="/dev/ttyNUMATO"/>
+        <param name="baud" value="19200"/>
+        <param name="timeout" value="0.001"/>
+        
+    </node>   
+</launch>
