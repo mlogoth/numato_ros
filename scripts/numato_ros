@@ -76,7 +76,6 @@ class Digital_Output:
         if (self.pub.get_num_connections()>0):
             serial_lock.acquire()
             self.result = self.readIO(self.pin)
-            print(self.topic_name+": "+self.result)
             serial_lock.release()
             self.msg.header.stamp = rospy.Time.now()
             res = str2bool(self.result)
@@ -92,10 +91,8 @@ class Digital_Output:
         if self.sub_flag:
             serial_lock.acquire()
             if self.logic == "Normal":
-                print(self.topic_name +": gpio "+ CMDS[self.state] +" "+ self.pin_to_index(self.pin)) 
                 self.serPort.write("gpio "+ CMDS[self.state] +" "+ self.pin_to_index(self.pin)  + "\r")
             elif self.logic == "Inverted":
-                print(self.topic_name +": gpio "+ CMDS[not(self.state)] +" "+ self.pin_to_index(self.pin)) 
                 self.serPort.write("gpio "+ CMDS[not(self.state)] +" "+ self.pin_to_index(self.pin)  + "\r")
             sleep(0.01)
             self.serPort.flush()
@@ -151,7 +148,6 @@ class Digital_Constants:
         if (self.pub.get_num_connections()>0):
             serial_lock.acquire()
             self.result = self.readIO(self.pin)
-            print(self.topic_name+": "+self.result)
             serial_lock.release()
             self.msg.header.stamp = rospy.Time.now()
             res = str2bool(self.result)
@@ -166,10 +162,8 @@ class Digital_Constants:
     def update_publish(self):
             serial_lock.acquire()
             if self.logic == "Normal":
-                print(self.topic_name +": gpio "+ CMDS[self.value] +" "+ self.pin_to_index(self.pin)) 
                 self.serPort.write("gpio "+ CMDS[self.value] +" "+ self.pin_to_index(self.pin)  + "\r")
             elif self.logic == "Inverted":
-                print(self.topic_name +": gpio "+ CMDS[not(self.value)] +" "+ self.pin_to_index(self.pin)) 
                 self.serPort.write("gpio "+ CMDS[not(self.value)] +" "+ self.pin_to_index(self.pin)  + "\r")
             sleep(0.01)
             self.serPort.flush()
@@ -212,7 +206,6 @@ class Digital_Input:
         if (self.pub.get_num_connections()>0):
             serial_lock.acquire()
             self.result = self.readIO(self.pin)
-            print(self.topic_name+": "+self.result)
             serial_lock.release()
             self.msg.header.stamp = rospy.Time.now()
             res = str2bool(self.result)
