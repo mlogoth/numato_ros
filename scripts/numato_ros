@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 
 import os
 import rospy
@@ -40,8 +40,8 @@ class GPIO:
             #print("ReadIO pin {} -> {}".format(self.pin_to_index(pin),res))
             serial_lock.release()
             return res[-4]
-        except SerialTimeoutException:
-                rospy.logwarn("Serial write timeout exception")
+        except Exception as e: 
+                rospy.logwarn("Cannot read serial: {}".format(e))
                 serial_lock.release()
                 return False
     
@@ -347,6 +347,12 @@ class NumatoRelayInterface:
 
         # try except condition for handling missing key error
         try:
+            constants = [Digital_Constants(keys, configs,self.serial_port) for keys in configs['constants']]
+            rospy.sleep(1.0)
+        except KeyError:
+            constants = []
+        
+        try:
             single_input = [Digital_Input(keys, configs, self.serial_port) for keys in configs['inputs']]
         except KeyError:
             single_input = []
@@ -355,11 +361,6 @@ class NumatoRelayInterface:
             single_output = [Digital_Output(keys, configs,self.serial_port) for keys in configs['outputs']]
         except KeyError:
             single_output = []
-        
-        try:
-            constants = [Digital_Constants(keys, configs,self.serial_port) for keys in configs['constants']]
-        except KeyError:
-            constants = []
 
         try:
             bumper_input_v2 = [Digital_Input_bumper_v2(keys, configs,self.serial_port) for keys in configs['bumper_v2']]
