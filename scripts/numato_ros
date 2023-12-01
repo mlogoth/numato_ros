@@ -170,6 +170,7 @@ class Digital_Constants(GPIO):
             self.msg.header.stamp = rospy.Time.now()
             self.msg.header.frame_id = self.topic_name
             res = self.str2bool(self.readIO(self.pin),self.topic_name)
+            self.update_publish()
             if (res!=None):
                 if self.logic == "Normal":
                     self.msg.state = res # pin state is normally at HIGH
