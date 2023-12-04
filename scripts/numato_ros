@@ -38,11 +38,13 @@ class GPIO:
             self.serPort.write("gpio read "+ self.pin_to_index(pin) + "\n\r")
             res  = str(self.serPort.read(self.SERIAL_READ_SIZE))
             #print("ReadIO pin {} -> {}".format(self.pin_to_index(pin),res))
-            serial_lock.release()
+            if (serial_lock.locked()):
+                serial_lock.release()
             return res[-4]
         except Exception as e: 
                 rospy.logwarn("Cannot read serial: {}".format(e))
-                serial_lock.release()
+                if (serial_lock.locked()):
+                    serial_lock.release()
                 return False
     
     def writeIO(self,pin,state):
@@ -50,7 +52,8 @@ class GPIO:
         self.serPort.write("gpio "+ CMDS[state] +" "+ self.pin_to_index(pin)  + "\r")
         res  = str(self.serPort.read(self.SERIAL_READ_SIZE))
         #print("WriteIO pin {} -> {}".format(self.pin_to_index(pin),res))
-        serial_lock.release()
+        if (serial_lock.locked()):
+            serial_lock.release()
         return res
         
         
