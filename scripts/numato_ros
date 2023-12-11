@@ -47,6 +47,35 @@ class GPIO:
                     serial_lock.release()
                 return False
     
+    def readIOAvgBool(self,pin,readtimes=8):
+        serial_lock.acquire()
+        results = []
+        try:
+            for i in range(readtimes):
+                self.serPort.write("gpio read "+ self.pin_to_index(pin) + "\n\r")
+                res  = str(self.serPort.read(self.SERIAL_READ_SIZE))
+                results.append(self.str2bool(res[-4]))
+                rospy.sleep(0.001)
+            
+            # Release Lock
+            if (serial_lock.locked()):
+                serial_lock.release()
+            
+            # Check if all inputs are the same
+            if (results.count(False)==len(results)):
+                return False
+            elif (results.count(True)==len(results)):
+                return True
+            else:
+                rospy.logwarn("PIN: {}: False trigger IO, return False".format(pin))
+                return False
+        except Exception as e: 
+                rospy.logwarn("Cannot read serial: {}".format(e))
+                if (serial_lock.locked()):
+                    serial_lock.release()
+                return False
+        
+    
     def writeIO(self,pin,state):
         serial_lock.acquire()
         self.serPort.write("gpio "+ CMDS[state] +" "+ self.pin_to_index(pin)  + "\r")
@@ -65,13 +94,13 @@ class GPIO:
         else:
             return result
     
-    def str2bool(self,value,pin):
+    def str2bool(self,value,pin=""):
         if (value in ["0","False","false"] ):
             return False
         elif (value in ["1","True","true"]):
             return True
         else:
-            return value
+            return None
     
     
     
@@ -92,45 +121,35 @@ class Digital_Output(GPIO):
             self.rate = configs['outputs'][id]["rate"]
         except:
             self.rate = 15.0
-        self.sub_flag = False
+        self.topic_sub = False
+        self.state = False
         
         self.sub = rospy.Subscriber(self.topic_name, Bool, self.callback)
-        self.pub = rospy.Publisher(self.topic_name+"/state", Labjack_dout, queue_size=1)
+        self.val_lock = Lock()
 
         self.tmr = rospy.Timer(rospy.Duration(1.0/self.rate), self.tmr_callback)
     
-    def __del__(self):
-        self.state = False
-        self.update_publish()
-        sleep(0.5)
     
     def tmr_callback(self, event):
         self.update_publish()
-        self.update_state()
     
     def callback(self,data):
-        self.sub_flag = True
-        self.state = data.data
-        
-    def update_state(self):
-        if (self.pub.get_num_connections()>0):
-            self.msg.header.stamp = rospy.Time.now()
-            self.msg.header.frame_id = self.topic_name
-            res = self.str2bool(self.readIO(self.pin),self.topic_name)
-            if (res!=None):
-                if self.logic == "Normal":
-                    self.msg.state = res # pin state is normally at HIGH
-                elif self.logic == "Inverted":
-                    self.msg.state = not(res) # pin state is normally at LOW
-                self.pub.publish(self.msg)
-
+        self.val_lock.acquire()
+        self.topic_sub = True
+        self.state = bool(data.data)
+        if (self.val_lock.locked()):
+            self.val_lock.release()
 
     def update_publish(self):
-        if self.sub_flag:
+        self.val_lock.acquire()
+        if (self.topic_sub):
             if self.logic == "Normal":
-                res = self.writeIO(self.pin,self.state)
+                    res = self.writeIO(self.pin,self.state)
             elif self.logic == "Inverted":
-                res= self.writeIO(self.pin,not(self.state))
+                    res= self.writeIO(self.pin,not(self.state))
+            self.topic_sub = False
+        if (self.val_lock.locked()):
+            self.val_lock.release()
 
 
 class Digital_Constants(GPIO):
@@ -151,43 +170,19 @@ class Digital_Constants(GPIO):
             self.rate = 15.0
         self.sub_flag = True
         self.set = False
-        
-        self.pub = rospy.Publisher(self.topic_name+"/state", Labjack_dout, queue_size=1)
-
-        self.tmr = rospy.Timer(rospy.Duration(1.0/self.rate), self.tmr_callback)
-    
-    def __del__(self):
-        self.value = False
         self.update_publish()
-        sleep(0.5)
-    
+        self.tmr = rospy.Timer(rospy.Duration(1.0/self.rate), self.tmr_callback)
     
     
     def tmr_callback(self, event):
-        if (not self.set):
-            self.update_publish() 
-        self.update_state()
-    
-    def update_state(self):
-        if (self.pub.get_num_connections()>0):
-            self.msg.header.stamp = rospy.Time.now()
-            self.msg.header.frame_id = self.topic_name
-            res = self.str2bool(self.readIO(self.pin),self.topic_name)
-            self.update_publish()
-            if (res!=None):
-                if self.logic == "Normal":
-                    self.msg.state = res # pin state is normally at HIGH
-                elif self.logic == "Inverted":
-                    self.msg.state = not(res) # pin state is normally at LOW
-                self.pub.publish(self.msg)
-
+        self.update_publish() 
+        
     def update_publish(self):
         if self.logic == "Normal":
-            self.writeIO(self.pin,self.value)
+            res = self.writeIO(self.pin,self.value)
         elif self.logic == "Inverted":
-            self.writeIO(self.pin,not(self.value))
-        self.set = True
-            
+            res = self.writeIO(self.pin,not(self.value))
+
 
 class Digital_Input(GPIO):
     def __init__(self, id, configs, serPort):
@@ -213,7 +208,7 @@ class Digital_Input(GPIO):
                 self.msg.header.stamp = rospy.Time.now()
                 self.msg.header.frame_id = self.topic_name
                 res = self.str2bool(self.readIO(self.pin),self.topic_name)
-                if (res!=None):
+                if (type(res)==bool):
                     if self.logic == "Normal":
                         self.msg.state = res # pin state is normally at HIGH
                     elif self.logic == "Inverted":
@@ -288,25 +283,25 @@ class Digital_Input_bumper_v2(GPIO):
             # Reading Digital Inputs
                 msg = Bumper_v2()
                 if (self.pin_lcb!=None):
-                    msg.low_bumper_center = self.get_result(self.str2bool(self.readIO(self.pin_lcb),self.topic_name+"-lc"))
+                    msg.low_bumper_center = self.get_result(self.readIOAvgBool(self.pin_lcb))
                 
                 if (self.pin_lrb!=None):
-                    msg.low_bumper_right = self.get_result(self.str2bool(self.readIO(self.pin_lrb),self.topic_name+"-lr"))
+                    msg.low_bumper_right = self.get_result(self.readIOAvgBool(self.pin_lrb))
                 
                 if (self.pin_llb!=None):
-                    msg.low_bumper_left = self.get_result(self.str2bool(self.readIO(self.pin_llb),self.topic_name+"-ll"))
+                    msg.low_bumper_left = self.get_result(self.readIOAvgBool(self.pin_llb))
                 
                 if (self.pin_hrb!=None):
-                    msg.high_bumper_right = self.get_result(self.str2bool(self.readIO(self.pin_hrb),self.topic_name+"-hr"))
+                    msg.high_bumper_right = self.get_result(self.readIOAvgBool(self.pin_hrb))
                 
                 if (self.pin_hcb!=None):
-                    msg.high_bumper_center = self.get_result(self.str2bool(self.readIO(self.pin_hcb),self.topic_name+"-hc"))
+                    msg.high_bumper_center = self.get_result(self.readIOAvgBool(self.pin_hcb))
                 
                 if (self.pin_hlb!=None):
-                    msg.high_bumper_left = self.get_result(self.str2bool(self.readIO(self.pin_hlb),self.topic_name+"-hl"))
+                    msg.high_bumper_left = self.get_result(self.readIOAvgBool(self.pin_hlb))
 
                 if (self.pin_sb!=None):
-                    msg.bumper_state = self.get_result(self.str2bool(self.readIO(self.pin_sb),self.topic_name+"-sb"))
+                    msg.bumper_state = self.get_result(self.readIOAvgBool(self.pin_sb))
                                 
                 # Write values of T4 to message
                 msg.header.stamp = rospy.Time.now()
