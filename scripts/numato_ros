@@ -47,7 +47,7 @@ class GPIO:
                     serial_lock.release()
                 return False
     
-    def readIOAvgBool(self,pin,readtimes=8):
+    def readIOAvgBool(self,pin,readtimes=12):
         serial_lock.acquire()
         results = []
         try:
@@ -56,6 +56,10 @@ class GPIO:
                 res  = str(self.serPort.read(self.SERIAL_READ_SIZE))
                 results.append(self.str2bool(res[-4]))
                 rospy.sleep(0.001)
+            
+            true_counts = results.count(True)
+            false_counts = results.count(False)
+            res_size = len(results)
             
             # Release Lock
             if (serial_lock.locked()):
@@ -67,7 +71,7 @@ class GPIO:
             elif (results.count(True)==len(results)):
                 return True
             else:
-                rospy.logwarn("PIN: {}: False trigger IO, return False".format(pin))
+                rospy.logwarn("PIN: {}: False trigger IO, return False | True counts: {} False counts: {} Result size: {}".format(pin,true_counts,false_counts,res_size))
                 return False
         except Exception as e: 
                 rospy.logwarn("Cannot read serial: {}".format(e))
