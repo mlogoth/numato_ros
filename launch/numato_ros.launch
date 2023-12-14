@@ -6,7 +6,7 @@
     <rosparam command="load" file="$(arg config_dir)" />
     <node pkg="numato_ros" name="numato_ros" type="numato_ros" output="screen">
         <param name="port" value="$(arg driver_port)"/>
-        <param name="baud" value="115200"/>
+        <param name="baud" value="9600"/>
         <param name="timeout" value="0.001"/>
     </node>   
 </launch>
