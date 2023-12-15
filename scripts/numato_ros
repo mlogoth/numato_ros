@@ -17,8 +17,7 @@ CMDS = {
     False: "clear"
 }
 
-serial_lock = Lock()
-
+DEBUG = False
 
 class GPIO:
     def __init__(self,serPort,logic,SERIAL_READ_SIZE=25):
@@ -33,38 +32,30 @@ class GPIO:
             return chr(55 + int(pin))
     
     def readIO(self,pin):
-        serial_lock.acquire()
         try:
+            # tic = rospy.Time.now().to_sec()
             self.serPort.write("gpio read "+ self.pin_to_index(pin) + "\n\r")
             res  = str(self.serPort.read(self.SERIAL_READ_SIZE))
-            #print("ReadIO pin {} -> {}".format(self.pin_to_index(pin),res))
-            if (serial_lock.locked()):
-                serial_lock.release()
+            # print("> ReadIO at: {}".format(rospy.Time.now().to_sec()-tic))
             return res[-4]
         except Exception as e: 
                 rospy.logwarn("Cannot read serial: {}".format(e))
-                if (serial_lock.locked()):
-                    serial_lock.release()
                 return False
     
-    def readIOAvgBool(self,pin,readtimes=12):
-        serial_lock.acquire()
+    def readIOAvgBool(self,pin,readtimes=8):
         results = []
         try:
+            # tic = rospy.Time.now().to_sec()
             for i in range(readtimes):
                 self.serPort.write("gpio read "+ self.pin_to_index(pin) + "\n\r")
                 res  = str(self.serPort.read(self.SERIAL_READ_SIZE))
                 results.append(self.str2bool(res[-4]))
-                rospy.sleep(0.001)
+                # rospy.sleep(0.001)
             
             true_counts = results.count(True)
             false_counts = results.count(False)
             res_size = len(results)
-            
-            # Release Lock
-            if (serial_lock.locked()):
-                serial_lock.release()
-            
+            # print("> readIOAvg at: {}".format(rospy.Time.now().to_sec()-tic))
             # Check if all inputs are the same
             if (results.count(False)==len(results)):
                 return False
@@ -75,18 +66,21 @@ class GPIO:
                 return False
         except Exception as e: 
                 rospy.logwarn("Cannot read serial: {}".format(e))
-                if (serial_lock.locked()):
-                    serial_lock.release()
                 return False
         
-    
+    def readMultIO(self,pins=[]):
+        self.serPort.write("gpio readall\n\r")
+        res  = str(self.serPort.read(1000))
+        print(res)
+        # print("response ({len(res)} byte):\n{res}")
+        print(" ".join(hex(c) for c in res))
+        
+        
     def writeIO(self,pin,state):
-        serial_lock.acquire()
+        # tic = rospy.Time.now().to_sec()
         self.serPort.write("gpio "+ CMDS[state] +" "+ self.pin_to_index(pin)  + "\r")
         res  = str(self.serPort.read(self.SERIAL_READ_SIZE))
-        #print("WriteIO pin {} -> {}".format(self.pin_to_index(pin),res))
-        if (serial_lock.locked()):
-            serial_lock.release()
+        # print("> writeIO at: {}".format(rospy.Time.now().to_sec()-tic))
         return res
         
         
@@ -130,31 +124,18 @@ class Digital_Output(GPIO):
         
         self.sub = rospy.Subscriber(self.topic_name, Bool, self.callback)
         self.val_lock = Lock()
-
-        self.tmr = rospy.Timer(rospy.Duration(1.0/self.rate), self.tmr_callback)
-    
-    
-    def tmr_callback(self, event):
-        self.update_publish()
     
     def callback(self,data):
-        self.val_lock.acquire()
         self.topic_sub = True
         self.state = bool(data.data)
-        if (self.val_lock.locked()):
-            self.val_lock.release()
 
     def update_publish(self):
-        self.val_lock.acquire()
         if (self.topic_sub):
             if self.logic == "Normal":
                     res = self.writeIO(self.pin,self.state)
             elif self.logic == "Inverted":
                     res= self.writeIO(self.pin,not(self.state))
             self.topic_sub = False
-        if (self.val_lock.locked()):
-            self.val_lock.release()
-
 
 class Digital_Constants(GPIO):
     def __init__(self, id, configs, serPort):
@@ -175,11 +156,7 @@ class Digital_Constants(GPIO):
         self.sub_flag = True
         self.set = False
         self.update_publish()
-        self.tmr = rospy.Timer(rospy.Duration(1.0/self.rate), self.tmr_callback)
-    
-    
-    def tmr_callback(self, event):
-        self.update_publish() 
+
         
     def update_publish(self):
         if self.logic == "Normal":
@@ -202,10 +179,7 @@ class Digital_Input(GPIO):
         self.rate = configs['inputs'][id]["rate"]
         
         self.pub = rospy.Publisher(self.topic_name, Labjack_dout, queue_size=1)
-        self.tmr = rospy.Timer(rospy.Duration(1.0/self.rate), self.tmr_callback)
-    
-    def tmr_callback(self, event):
-        self.update_publish()
+
     
     def update_publish(self):
         if (self.pub.get_num_connections()>0):
@@ -277,14 +251,12 @@ class Digital_Input_bumper_v2(GPIO):
         
 
         self.pub = rospy.Publisher(self.topic_name, Bumper_v2, queue_size=1)
-        self.tmr = rospy.Timer(rospy.Duration(1.0/self.rate), self.tmr_callback)
     
-    def tmr_callback(self, event):
-        self.update_publish()
-            
+
     def update_publish(self):
         if (self.pub.get_num_connections()>0):
             # Reading Digital Inputs
+                self.readMultIO()
                 msg = Bumper_v2()
                 if (self.pin_lcb!=None):
                     msg.low_bumper_center = self.get_result(self.readIOAvgBool(self.pin_lcb))
@@ -377,7 +349,16 @@ class NumatoRelayInterface:
     def run(self):
         configs = self.read_params()
         self.objs = self.dictionary2objectlist(configs)
-        rospy.spin()
+        
+        while (not rospy.is_shutdown()):
+            rate = rospy.get_param("~rate",10)
+            tic = rospy.Time.now().to_sec()
+            # if (DEBUG):
+            for _io in self.objs:
+                _io.update_publish()
+            # if (DEBUG):
+            print("== Numato Loop time: {:0.4f} ==".format(rospy.Time.now().to_sec()-tic))
+            rospy.sleep(1.0/float(rate))
 
 
 if __name__ == "__main__":
